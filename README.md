@@ -47,7 +47,7 @@ pip install -r requirements.txt
 ```python
 from ghostbuster.decoder import decode_ghost_video
 
-mask, _ = decode_ghost_video("clip.mp4", velocity=2, num_frames=60)
+mask = decode_ghost_video("clip.mp4", velocity=2, num_frames=60)
 # mask: binary image (0/255), white where text was detected
 ```
 

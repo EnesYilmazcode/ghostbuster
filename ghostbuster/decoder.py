@@ -11,7 +11,7 @@ def decode_ghost_video(video_path, block_size=12, velocity=2, num_frames=None):
     over the clip and pooled over `block_size` blocks, the sign of the score
     separates the text (scrolling up) from the background (scrolling down).
 
-    Returns a binary mask (0/255, H x W) and a dict of debug stats.
+    Returns a binary mask (0/255, H x W), white where text was detected.
     """
     cap = cv2.VideoCapture(str(video_path))
     frames = []
@@ -26,26 +26,18 @@ def decode_ghost_video(video_path, block_size=12, velocity=2, num_frames=None):
         raise ValueError("need at least 2 frames to decode")
 
     frames = np.stack(frames)
-    T, H, W = frames.shape
+    num, height, width = frames.shape
 
     # Remove each frame's DC term, otherwise it swamps the correlation.
     frames -= frames.mean(axis=(1, 2), keepdims=True)
 
-    s = velocity
-    score = np.zeros((H, W), np.float32)
-    for t in range(T - 1):
+    v = velocity
+    score = np.zeros((height, width), np.float32)
+    for t in range(num - 1):
         a, b = frames[t], frames[t + 1]
-        score[s:, :] += a[s:, :] * b[:-s, :]   # matches if content moved up
-        score[:-s, :] -= a[:-s, :] * b[s:, :]  # matches if content moved down
+        score[v:, :] += a[v:, :] * b[:-v, :]   # matches if content moved up
+        score[:-v, :] -= a[:-v, :] * b[v:, :]  # matches if content moved down
 
     score = cv2.blur(score, (block_size, block_size))
-    mask = ((score > 0) * 255).astype(np.uint8)
-    mask = cv2.medianBlur(mask, 5)
-
-    debug = {
-        "frame_count": T,
-        "shape": (H, W),
-        "score_min": float(score.min()),
-        "score_max": float(score.max()),
-    }
-    return mask, debug
+    mask = (score > 0).astype(np.uint8) * 255
+    return cv2.medianBlur(mask, 5)

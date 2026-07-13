@@ -40,7 +40,7 @@ def main():
     gif[0].save(assets / "noise.gif", save_all=True, append_images=gif[1:],
                 duration=50, loop=0, optimize=True)
 
-    detected, _ = decode_ghost_video(str(video), velocity=VELOCITY, num_frames=FRAMES)
+    detected = decode_ghost_video(str(video), velocity=VELOCITY, num_frames=FRAMES)
     cv2.imwrite(str(assets / "detected.png"), detected)
 
     print("wrote:", ", ".join(sorted(p.name for p in assets.iterdir())))

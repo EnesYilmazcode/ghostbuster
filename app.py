@@ -69,7 +69,7 @@ async def decode(file: UploadFile = File(...), velocity: int = 2, num_frames: in
         path = tmp.name
 
     try:
-        mask, _ = decode_ghost_video(path, velocity=velocity, num_frames=num_frames)
+        mask = decode_ghost_video(path, velocity=velocity, num_frames=num_frames)
     finally:
         Path(path).unlink(missing_ok=True)
 
