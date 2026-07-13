@@ -1,139 +1,104 @@
+import math
+from pathlib import Path
+
 import cv2
 import numpy as np
-from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
-def generate_motion_masked_video(
-    output_path,
+def _text_mask(text, width, height, font_size):
+    """Boolean mask (H, W) that is True inside the glyphs."""
+    img = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except OSError:
+        font = ImageFont.load_default()
+
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    x = (width - tw) // 2 - bbox[0]
+    y = (height - th) // 2 - bbox[1]
+    draw.text((x, y), text, fill=255, font=font)
+
+    return np.array(img) > 128
+
+
+def _binary_noise(rng, height, width, grain):
+    """Black/white noise field, optionally in chunks of `grain` pixels."""
+    if grain <= 1:
+        return (rng.integers(0, 2, (height, width), dtype=np.uint8) * 255)
+    gh, gw = math.ceil(height / grain), math.ceil(width / grain)
+    small = rng.integers(0, 2, (gh, gw), dtype=np.uint8) * 255
+    big = np.repeat(np.repeat(small, grain, axis=0), grain, axis=1)
+    return big[:height, :width]
+
+
+def render_frames(
     text="GHOST",
     width=640,
     height=480,
     num_frames=60,
     velocity=2,
-    font_size=100,
+    font_size=150,
+    grain=2,
     seed=42,
 ):
     """
-    Generate a synthetic video with motion-masked text.
+    Render the frames of a motion-masked clip and its ground-truth text mask.
 
-    Text region: noise moving UP at velocity v
-    Background: noise moving DOWN at velocity v
-    Result: text is only readable in video, not in single frames.
-
-    Args:
-        output_path: where to save video
-        text: text to hide
-        width, height: video dimensions
-        num_frames: number of frames
-        velocity: pixels per frame
-        font_size: text size
-        seed: random seed for reproducibility
+    A single noise canvas scrolls behind the frame. Inside the glyphs it scrolls
+    up, everywhere else it scrolls down. Any single frame is uniform noise, so the
+    text is invisible in a screenshot and only the motion gives it away.
     """
-    np.random.seed(seed)
+    rng = np.random.default_rng(seed)
+    mask = _text_mask(text, width, height, font_size)
 
-    # Create text mask using PIL
-    pil_img = Image.new("L", (width, height), 0)
-    draw = ImageDraw.Draw(pil_img)
+    scroll = velocity * (num_frames - 1)
+    canvas = _binary_noise(rng, height + scroll + 1, width, grain)
 
-    # Use default font; try to load a better one if available
-    try:
-        font = ImageFont.truetype("arial.ttf", font_size)
-    except:
-        font = ImageFont.load_default()
-
-    # Get text bounding box to center it
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
-    x = (width - text_width) // 2
-    y = (height - text_height) // 2
-
-    draw.text((x, y), text, fill=255, font=font)
-    text_mask = np.array(pil_img) > 128  # (H, W) boolean
-
-    # Set up video writer
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(str(output_path), fourcc, 30.0, (width, height))
-
-    # Generate frames
+    frames = []
     for t in range(num_frames):
-        # Random noise for this frame
-        noise = np.random.randint(0, 256, (height, width), dtype=np.uint8)
+        up = velocity * t                # glyphs scroll up
+        down = scroll - velocity * t     # background scrolls down
+        frame = np.where(mask, canvas[up:up + height], canvas[down:down + height])
+        frames.append(frame.astype(np.uint8))
 
-        # Shift noise for text region (UP = increasing indices wrap around)
-        # and background (DOWN = decreasing indices wrap around)
-        shift = (velocity * t) % height
-
-        frame = noise.copy()
-
-        # Text region: shift noise UP (subtract shift)
-        for y in range(height):
-            src_y = (y + shift) % height
-            frame[y, text_mask[y]] = noise[src_y, text_mask[y]]
-
-        # Background region: shift noise DOWN (add shift)
-        for y in range(height):
-            src_y = (y - shift) % height
-            frame[y, ~text_mask[y]] = noise[src_y, ~text_mask[y]]
-
-        # Convert to BGR for video output
-        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-        out.write(frame_bgr)
-
-    out.release()
-    print(f"Generated video: {output_path}")
+    return frames, mask
 
 
-def generate_test_suite():
-    """Generate a suite of test videos."""
-    test_dir = Path(__file__).parent / "videos"
-    test_dir.mkdir(exist_ok=True)
+def generate_motion_masked_video(output_path, **kwargs):
+    """Write a motion-masked video and return its ground-truth text mask."""
+    frames, mask = render_frames(**kwargs)
+    height, width = frames[0].shape
 
-    # Test case 1: simple text, standard velocity
-    generate_motion_masked_video(
-        test_dir / "simple.mp4",
-        text="HELLO",
-        velocity=2,
-        num_frames=60,
-        seed=42,
-    )
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(output_path), fourcc, 30.0, (width, height))
+    for frame in frames:
+        writer.write(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR))
+    writer.release()
+    return mask
 
-    # Test case 2: longer text
-    generate_motion_masked_video(
-        test_dir / "long.mp4",
-        text="GHOSTBUSTER",
-        velocity=2,
-        num_frames=60,
-        seed=43,
-    )
 
-    # Test case 3: faster velocity
-    generate_motion_masked_video(
-        test_dir / "fast.mp4",
-        text="FAST",
-        velocity=3,
-        num_frames=60,
-        seed=44,
-    )
+def generate_test_suite(out_dir=None):
+    """Generate a small spread of videos and their ground-truth masks."""
+    out_dir = Path(out_dir or Path(__file__).parent / "videos")
+    out_dir.mkdir(exist_ok=True)
 
-    # Test case 4: slower velocity
-    generate_motion_masked_video(
-        test_dir / "slow.mp4",
-        text="SLOW",
-        velocity=1,
-        num_frames=60,
-        seed=45,
-    )
+    cases = [
+        dict(name="simple", text="HELLO", velocity=2, num_frames=60, seed=42),
+        dict(name="long", text="GHOSTBUSTER", velocity=2, num_frames=60, seed=43),
+        dict(name="fast", text="FAST", velocity=3, num_frames=60, seed=44),
+        dict(name="slow", text="SLOW", velocity=1, num_frames=60, seed=45),
+        dict(name="many_frames", text="CLEAR", velocity=2, num_frames=120, seed=46),
+    ]
 
-    # Test case 5: more frames (better SNR)
-    generate_motion_masked_video(
-        test_dir / "many_frames.mp4",
-        text="CLEAR",
-        velocity=2,
-        num_frames=120,
-        seed=46,
-    )
+    masks = {}
+    for c in cases:
+        name = c.pop("name")
+        masks[name] = generate_motion_masked_video(out_dir / f"{name}.mp4", **c)
+        print(f"generated {name}.mp4")
+    return masks
 
 
 if __name__ == "__main__":
