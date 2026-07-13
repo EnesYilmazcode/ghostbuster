@@ -1,71 +1,53 @@
-import pytest
-import numpy as np
 import sys
 from pathlib import Path
+
+import numpy as np
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ghostbuster.decoder import decode_ghost_video
 from tests.test_generator import generate_motion_masked_video
 
 
+def iou(ground_truth, predicted):
+    inter = np.logical_and(ground_truth, predicted).sum()
+    union = np.logical_or(ground_truth, predicted).sum()
+    return inter / union if union else 0.0
+
+
 @pytest.fixture(scope="session")
-def test_videos(tmp_path_factory):
-    """Generate test videos once per session."""
-    tmpdir = tmp_path_factory.mktemp("videos")
-
-    videos = {
-        "simple": tmpdir / "simple.mp4",
-        "long": tmpdir / "long.mp4",
-        "fast": tmpdir / "fast.mp4",
-    }
-
-    generate_motion_masked_video(
-        videos["simple"], text="HI", velocity=2, num_frames=60, seed=42
-    )
-    generate_motion_masked_video(
-        videos["long"], text="GHOSTBUSTER", velocity=2, num_frames=60, seed=43
-    )
-    generate_motion_masked_video(
-        videos["fast"], text="GO", velocity=3, num_frames=60, seed=44
-    )
-
-    return videos
+def clip(tmp_path_factory):
+    path = tmp_path_factory.mktemp("videos") / "clip.mp4"
+    mask = generate_motion_masked_video(path, text="GHOST", velocity=2, num_frames=60, seed=7)
+    return path, mask
 
 
-def test_decoder_runs(test_videos):
-    """Smoke test: decoder should run without error."""
-    mask, debug = decode_ghost_video(test_videos["simple"], num_frames=30)
-
-    assert mask.shape == (480, 640)
-    assert mask.dtype == np.uint8
-    assert debug["frame_count"] == 30
+def test_output_is_binary(clip):
+    path, _ = clip
+    detected, _ = decode_ghost_video(path)
+    assert set(np.unique(detected)).issubset({0, 255})
 
 
-def test_decoder_output_range(test_videos):
-    """Output should be binary (0 or 255)."""
-    mask, _ = decode_ghost_video(test_videos["simple"])
-
-    unique_vals = np.unique(mask)
-    assert set(unique_vals).issubset({0, 255})
+def test_recovers_text(clip):
+    path, mask = clip
+    detected, _ = decode_ghost_video(path, velocity=2, num_frames=60)
+    assert iou(mask, detected > 0) > 0.8
 
 
-def test_decoder_with_velocity_tuning(test_videos):
-    """Decoder should work with different velocity settings."""
-    # Fast velocity video should use velocity=3
-    mask_fast, _ = decode_ghost_video(
-        test_videos["fast"], velocity=3, num_frames=30
-    )
-
-    # Should have some text pixels (non-zero)
-    assert mask_fast.sum() > 0
+def test_deterministic(clip):
+    path, _ = clip
+    a, _ = decode_ghost_video(path)
+    b, _ = decode_ghost_video(path)
+    assert np.array_equal(a, b)
 
 
-def test_decoder_consistency(test_videos):
-    """Same video should produce same output."""
-    mask1, _ = decode_ghost_video(test_videos["simple"])
-    mask2, _ = decode_ghost_video(test_videos["simple"])
-
-    assert np.array_equal(mask1, mask2)
+@pytest.mark.parametrize("velocity", [1, 2, 3])
+def test_recovers_across_velocities(tmp_path, velocity):
+    path = tmp_path / f"v{velocity}.mp4"
+    mask = generate_motion_masked_video(path, text="OK", velocity=velocity, num_frames=60, seed=1)
+    detected, _ = decode_ghost_video(path, velocity=velocity, num_frames=60)
+    assert iou(mask, detected > 0) > 0.7
 
 
 if __name__ == "__main__":
