@@ -1,13 +1,8 @@
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from ghostbuster.decoder import decode_ghost_video
-from tests.test_generator import generate_motion_masked_video
+from ghostbuster.encoder import generate_motion_masked_video
 
 
 def iou(ground_truth, predicted):
@@ -46,7 +41,3 @@ def test_recovers_across_velocities(tmp_path, velocity):
     mask = generate_motion_masked_video(path, text="OK", velocity=velocity, num_frames=60, seed=1)
     detected = decode_ghost_video(path, velocity=velocity, num_frames=60)
     assert iou(mask, detected > 0) > 0.7
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

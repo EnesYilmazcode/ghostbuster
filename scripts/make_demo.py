@@ -10,7 +10,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from ghostbuster.decoder import decode_ghost_video
-from tests.test_generator import render_frames
+from ghostbuster.encoder import render_frames
 
 TEXT = "GHOST"
 VELOCITY = 2
