@@ -1,68 +1,85 @@
 # ghostbuster
-Decodes "human-only" motion-masked fonts by tracking per-pixel velocity across frames.
 
-## What is motion-masked text?
+Recovers "human-only" text that is hidden in the motion of a noise video.
 
-A text image is encoded into video by making pixels in the text region move **up** at velocity _v_, and pixels in the background move **down** at velocity _v_. The noise in each region is random, so any single frame looks like pure noise. But across frames, the temporal derivative reveals the mask.
+<table>
+<tr>
+<td align="center"><b>Input clip</b> (play it)</td>
+<td align="center"><b>Decoded</b></td>
+</tr>
+<tr>
+<td><img src="assets/noise.gif" width="320" alt="scrolling black-and-white noise"></td>
+<td><img src="assets/detected.png" width="320" alt="the word GHOST recovered"></td>
+</tr>
+</table>
 
-## How it works
+Pause the clip on any single frame and it is just static:
 
-**Block matching + accumulation:**
-- Stack N frames (30–60 typical)
-- For each pixel, correlate frame pairs with ±velocity shifts
-- Accumulate evidence across time: upward motion → text (positive), downward → background (negative)
-- Threshold and cleanup
+<img src="assets/frame.png" width="320" alt="a single frame is pure noise">
 
-**Why it works:** A single frame has terrible SNR (~coin flip). But integrating over T frames and spatial blocks (12×12) pools ~4000 samples, and error falls off like 1/√(samples).
+## The trick
 
-## Quick start
+The text is not hidden in brightness, it is hidden in motion. A field of
+black-and-white noise scrolls behind the frame. Inside the letters it scrolls
+**up**, everywhere else it scrolls **down**. Every individual frame is the same
+uniform noise, so a screenshot shows nothing. Only when the video plays does the
+opposing motion draw the letters out.
+
+So this is not an AI-proof font. It is a screenshot-proof one. Anything that
+sees more than a single frame, including this decoder, reads it straight through.
+
+## How the decoder works
+
+For each pair of consecutive frames it correlates them shifted up and down by a
+few pixels. Upward motion counts positive, downward negative. One frame pair is
+almost pure chance, but summing over the whole clip and pooling over small blocks
+makes the sign reliable: positive blocks are the text, negative blocks are the
+background. Threshold the sign and you have the mask.
+
+That is the whole method, about 30 lines in [`ghostbuster/decoder.py`](ghostbuster/decoder.py).
+
+## Usage
 
 ```bash
 pip install -r requirements.txt
-
-# Generate test videos
-python tests/test_generator.py
-
-# Run tests
-pytest tests/ -v
-
-# Start web server
-python app.py
-# Visit http://localhost:8000
 ```
 
-## API
-
-### Python
 ```python
 from ghostbuster.decoder import decode_ghost_video
 
-mask, debug = decode_ghost_video("video.mp4", velocity=2, num_frames=60)
-# mask: binary segmentation (H×W, 0/255)
-# debug: {frame_count, shape, score stats}
+mask, _ = decode_ghost_video("clip.mp4", velocity=2, num_frames=60)
+# mask: binary image (0/255), white where text was detected
 ```
 
-### Web
+Web app (upload a clip in the browser):
+
+```bash
+python app.py          # http://127.0.0.1:8000
 ```
-POST /decode
-  file: video file (multipart)
-  velocity: int (default 2)
-  num_frames: int (default 60)
-→ PNG mask
+
+Regenerate the demo assets and a sample `assets/demo.mp4` to try:
+
+```bash
+python scripts/make_demo.py
+```
+
+Run the tests:
+
+```bash
+pytest
 ```
 
 ## Parameters
 
-- **velocity**: pixels/frame the text/background move in opposite directions. Typically 1–3. Sweep if unsure.
-- **num_frames**: frames to read from video. More = better SNR. 30–120 typical.
-- **block_size**: spatial pooling kernel. Default 12.
+- `velocity` — pixels per frame the text and background move in opposite
+  directions, usually 1 to 3. If a clip does not resolve, sweep this.
+- `num_frames` — frames to read. More frames give a cleaner result. 30 to 120 is
+  a good range.
+- `block_size` — spatial pooling window, default 12.
 
-## Gotchas
+## Limits
 
-- **Video compression kills temporal structure.** H.264 MP4s smear noise. Test on originals.
-- **Aliasing:** if velocity × frame_rate > 1px, you get temporal aliasing. Sub-sample or downscale if needed.
-- **SNR is terrible per-pixel per-frame.** The approach works because it integrates massively. 2–3 frames won't work.
-
-## Why this matters
-
-This isn't an AI-proof font. It's a defense against *single-frame sampling*. Any model trained on temporal video reads it trivially. The fun is showing that concretely, and understanding motion segmentation as a primitive.
+- Heavy video compression smears the noise and hurts recovery. Test on the
+  original clip, not a re-encoded download.
+- If `velocity` is large relative to the noise grain you can hit temporal
+  aliasing and the sign flips. Downscale or read fewer frames if that happens.
