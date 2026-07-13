@@ -27,6 +27,7 @@ htmlcov/
 result_*.png
 scratch_*
 tests/videos/
+assets/demo.mp4
 
 .env
 .venv
