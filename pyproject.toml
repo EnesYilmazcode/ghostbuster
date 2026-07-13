@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghostbuster"
+version = "0.1.0"
+description = "Decodes motion-masked fonts by tracking per-pixel velocity across frames"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+web = ["fastapi>=0.104.0", "uvicorn[standard]>=0.24.0", "python-multipart>=0.0.6"]
+dev = ["pytest>=7.4.0"]

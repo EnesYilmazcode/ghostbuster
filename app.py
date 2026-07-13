@@ -1,9 +1,7 @@
 import tempfile
-import os
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
 import cv2
 from ghostbuster.decoder import decode_ghost_video
 
@@ -87,7 +85,7 @@ async def decode(
             f.write(content)
 
         # Decode
-        mask, debug = decode_ghost_video(
+        mask, _ = decode_ghost_video(
             str(video_path),
             velocity=velocity,
             num_frames=num_frames,

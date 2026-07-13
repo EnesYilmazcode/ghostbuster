@@ -1,8 +1,11 @@
 import pytest
 import numpy as np
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from ghostbuster.decoder import decode_ghost_video
-from test_generator import generate_motion_masked_video
+from tests.test_generator import generate_motion_masked_video
 
 
 @pytest.fixture(scope="session")
