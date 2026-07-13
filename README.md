@@ -71,11 +71,11 @@ pytest
 
 ## Parameters
 
-- `velocity` — pixels per frame the text and background move in opposite
+- `velocity` - pixels per frame the text and background move in opposite
   directions, usually 1 to 3. If a clip does not resolve, sweep this.
-- `num_frames` — frames to read. More frames give a cleaner result. 30 to 120 is
+- `num_frames` - frames to read. More frames give a cleaner result. 30 to 120 is
   a good range.
-- `block_size` — spatial pooling window, default 12.
+- `block_size` - spatial pooling window, default 12.
 
 ## Limits
 
